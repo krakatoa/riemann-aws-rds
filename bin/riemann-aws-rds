@@ -1,0 +1,64 @@
+#!/usr/bin/env ruby
+
+# Riemann agent to collect Rpush metrics
+
+require 'fog'
+require 'riemann/tools'
+require 'json'
+
+class Riemann::Tools::AwsRds
+  include Riemann::Tools
+
+  opt :access_key, "AWS access key", :type => String
+  opt :secret_key, "Secret access key", :type => String
+  opt :region, "AWS region", :type => String, :default => 'us-east-1'
+  opt :database, "DB Instance identifiers", :type => String, :multi => true
+  opt :metric, "Metric names with comma-separated warning/critical thresholds (eg., 'CPUUtilization,50,90'). Multiple tuples can be set.", :type => String, :multi => true
+
+  def initialize
+    abort "FATAL: specify a DB instances list, see --help for usage" unless opts[:database]
+    @databases = opts.fetch(:database)
+    @metrics = opts.fetch(:metric).inject({}) do |h, arg|
+      metric, warning, critical = arg.split(",")
+      h[metric] = { warning: warning.to_i, critical: critical.to_i }; h
+    end
+    @cloudwatch = Fog::AWS::CloudWatch.new(:aws_access_key_id => opts[:access_key],
+                                           :aws_secret_access_key => opts[:secret_key],
+                                           :region => opts[:region])
+  end
+
+  def tick
+    # ['DatabaseConnections', 'FreeableMemory', 'FreeStorageSpace', 'NetworkReceiveThroughput', 'NetworkTransmitThroughput', 'ReadThroughput', 'CPUUtilization'].each do |metric|
+    time = Time.new
+    @databases.each do |database|
+      @metrics.each_pair do |metric, thresholds|
+        result = @cloudwatch.get_metric_statistics({"Namespace" => 'AWS/RDS', "MetricName" => "#{metric}", "Statistics" => 'Average', "Dimensions" => [{"Name" => "DBInstanceIdentifier", "Value" => "#{database}"}], "StartTime" => (time-120).to_time.iso8601, "EndTime" => time.to_time.iso8601, "Period" => 60})
+        metric_result = result.data[:body]['GetMetricStatisticsResult']
+        puts JSON.dump(metric_result)
+        if (metric_result['Datapoints'].length > 0)
+          datapoint = metric_result['Datapoints'][0]
+          value = datapoint['Average']
+
+          state = if value >= @metrics[metric][:critical]
+            'critical'
+          elsif value >= @metrics[metric][:warning]
+            'warning'
+          else
+            'ok'
+          end
+
+          msg = {
+            metric: datapoint['Average'],
+            service: "#{database}.#{metric} (#{datapoint['Unit']})",
+            state: state,
+            ttl: 120
+          }
+
+          report msg
+        end
+      end
+    end
+  end
+end
+
+Riemann::Tools::AwsRds.run
