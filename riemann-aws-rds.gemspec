@@ -4,7 +4,7 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
 Gem::Specification.new do |spec|
   spec.name          = "riemann-aws-rds"
-  spec.version       = '0.0.1'
+  spec.version       = '0.0.2'
   spec.authors       = ["Fernando Alonso"]
   spec.email         = ["krakatoa1987@gmail.com"]
   spec.summary       = %q{Riemann agent to collect Aws Rds metrics}
