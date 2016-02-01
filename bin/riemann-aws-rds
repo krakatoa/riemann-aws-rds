@@ -22,9 +22,15 @@ class Riemann::Tools::AwsRds
       metric, warning, critical = arg.split(",")
       h[metric] = { warning: warning.to_i, critical: critical.to_i }; h
     end
-    @cloudwatch = Fog::AWS::CloudWatch.new(:aws_access_key_id => opts[:access_key],
-                                           :aws_secret_access_key => opts[:secret_key],
-                                           :region => opts[:region])
+
+    if opts.has_key?('access_key') and opts.has_key?('secret_key')
+      creds = { :aws_access_key_id     => opts[:access_key],
+                :aws_secret_access_key => opts[:secret_key] }
+    else
+      creds = { :use_iam_profile => true }
+    end
+    creds['region'] = opts[:region]
+    @cloudwatch = Fog::AWS::CloudWatch.new(creds)
   end
 
   def tick
